@@ -210,9 +210,20 @@ Pre-built macOS editor with WebGPU export support.
 ## Building from Source
 
 ```bash
-# WebGPU-only release template:
+# WebGPU release template (no GDExtension support — smaller, faster boot):
+scons platform=web target=template_release webgpu=yes opengl3=no threads=no
+
+# WebGPU release template WITH GDExtension support (dynamic linking):
 scons platform=web target=template_release dlink_enabled=yes webgpu=yes opengl3=no threads=no
 ```
+
+Build-flag decisions (each is a per-project tradeoff, not a requirement):
+
+| Flag | Engine default | Effect of deviating |
+|---|---|---|
+| `dlink_enabled=yes` | off | Enables GDExtension plugins on web. Costs a larger download (split main+side module) and a multi-second main-thread link/relocation step after the download bar completes — measured ~10s of silent post-bar stall on a mid-size template vs ~2-3s without. Only needed if the project uses GDExtensions (upstream Godot ships both template variants and selects per-project via the export preset's "Extensions Support" checkbox). |
+| `opengl3=no` | on | Strips the GL driver: smaller template, but no `gl_compatibility` fallback for browsers without WebGPU. Keep GL in (like the debug recipe above does) if you want graceful fallback. |
+| `threads=no` | on | Single-threaded build: avoids the COOP/COEP cross-origin-isolation hosting requirement. Currently required by this backend's single-threaded design assumptions. |
 
 Requirements:
 - Emscripten 4.0.10+ (for the emdawnwebgpu port)

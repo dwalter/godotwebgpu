@@ -24,7 +24,7 @@ All major desktop browsers with WebGPU enabled. Mobile browser support is emergi
 scons platform=web target=template_release dlink_enabled=yes webgpu=yes opengl3=no threads=no
 ```
 
-The `dlink_enabled=yes` flag enables Emscripten dynamic linking, which produces a main module (`godot.wasm`) and a side module (`godot.side.wasm`). This is required for the WebGPU export template.
+The `dlink_enabled=yes` flag enables Emscripten dynamic linking, which produces a main module (`godot.wasm`) and a side module (`godot.side.wasm`). It is required only for GDExtension support on web — the WebGPU template builds and runs without it (verified: compile, desktop rendering, and immersive-vr entry all work on a non-dlink build), and the monolithic build is smaller and avoids a multi-second main-thread linking step after download. Use `dlink_enabled=yes` when the project ships GDExtensions; omit it otherwise.
 
 Requirements:
 - Emscripten 4.0.10+ (for the emdawnwebgpu port)
