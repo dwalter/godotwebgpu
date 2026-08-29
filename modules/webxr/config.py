@@ -1,5 +1,5 @@
 def can_build(env, platform):
-    return env["opengl3"] and not env["disable_xr"]
+    return (env["opengl3"] or env["webgpu"]) and not env["disable_xr"]
 
 
 def configure(env):

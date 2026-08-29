@@ -867,8 +867,33 @@ void RendererViewport::draw_viewports(bool p_swap_buffers) {
 				// render...
 				RSG::scene->set_debug_draw_mode(vp->debug_draw);
 
-				// and draw viewport
-				_draw_viewport(vp);
+				if (xr_interface->needs_per_view_passes()) {
+					// The driver has no multiview, so each view is drawn as an
+					// ordinary single-view pass into its own layer of the XR
+					// texture array. The interface supplies the per-view target
+					// and reports which view is current for camera/projection.
+					const uint32_t xr_view_count = xr_interface->get_per_view_pass_count();
+					for (uint32_t v = 0; v < xr_view_count; v++) {
+						xr_interface->set_current_view(v);
+						RSG::texture_storage->render_target_set_override(vp->render_target,
+								xr_interface->get_color_texture_for_view(v),
+								xr_interface->get_depth_texture_for_view(v),
+								RID(),
+								RID());
+						_draw_viewport(vp);
+					}
+					xr_interface->set_current_view(0);
+					// Restore the frame-level override set above, so the render
+					// target is not left pointing at the last view's slice.
+					RSG::texture_storage->render_target_set_override(vp->render_target,
+							xr_interface->get_color_texture(),
+							xr_interface->get_depth_texture(),
+							xr_interface->get_velocity_texture(),
+							xr_interface->get_velocity_depth_texture());
+				} else {
+					// and draw viewport
+					_draw_viewport(vp);
+				}
 
 				// commit our eyes
 				Vector<BlitToScreen> blits = xr_interface->post_draw_viewport(vp->render_target, vp->viewport_to_screen_rect);

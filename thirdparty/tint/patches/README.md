@@ -23,6 +23,7 @@ done
 | 0004 | shader_io.cc | Point size | Accept non-constant `point_size` stores |
 | 0005 | ir_to_program.cc | Spec constants | `@size` emission guard + capability |
 | 0006 | parse_num.cc | Vendoring | Replace `absl::from_chars` with `std::from_chars` |
+| 0007 | validator.cc | UBO layout | Extend `kAllowStructMemberSizeMismatch` to the struct TOTAL-size check (spec-constant-sized arrays leave `Size()` at its unfolded value) |
 
 ## Logical Groups
 

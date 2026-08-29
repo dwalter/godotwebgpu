@@ -1259,3 +1259,89 @@ XRMediaBinding.prototype.createEquirectLayer = function(video, init) {};
  * @type {Array<XRLayer>}
  */
 XRRenderState.prototype.layers;
+
+/*
+ * WebXR-WebGPU Binding (https://immersive-web.github.io/webxr-webgpu-binding/)
+ */
+
+/**
+ * @constructor XRGPUProjectionLayerInit
+ */
+function XRGPUProjectionLayerInit() {}
+
+/**
+ * @type {string}
+ */
+XRGPUProjectionLayerInit.prototype.textureType;
+
+/**
+ * @type {string}
+ */
+XRGPUProjectionLayerInit.prototype.colorFormat;
+
+/**
+ * @type {string}
+ */
+XRGPUProjectionLayerInit.prototype.depthStencilFormat;
+
+/**
+ * @type {number}
+ */
+XRGPUProjectionLayerInit.prototype.scaleFactor;
+
+/**
+ * @constructor XRGPUSubImage
+ * @extends {XRSubImage}
+ */
+function XRGPUSubImage() {}
+
+/**
+ * @type {GPUTexture}
+ */
+XRGPUSubImage.prototype.colorTexture;
+
+/**
+ * @type {?GPUTexture}
+ */
+XRGPUSubImage.prototype.depthStencilTexture;
+
+/**
+ * @type {?GPUTexture}
+ */
+XRGPUSubImage.prototype.motionVectorTexture;
+
+/**
+ * @type {?number}
+ */
+XRGPUSubImage.prototype.imageIndex;
+
+/**
+ * @constructor XRGPUBinding
+ *
+ * @param {XRSession} session
+ * @param {GPUDevice} device
+ */
+function XRGPUBinding(session, device) {}
+
+/**
+ * @type {number}
+ */
+XRGPUBinding.prototype.nativeProjectionScaleFactor;
+
+/**
+ * @return {string}
+ */
+XRGPUBinding.prototype.getPreferredColorFormat = function () {};
+
+/**
+ * @param {XRGPUProjectionLayerInit} init
+ * @return {XRProjectionLayer}
+ */
+XRGPUBinding.prototype.createProjectionLayer = function (init) {};
+
+/**
+ * @param {XRProjectionLayer} layer
+ * @param {XRView} view
+ * @return {XRGPUSubImage}
+ */
+XRGPUBinding.prototype.getViewSubImage = function (layer, view) {};

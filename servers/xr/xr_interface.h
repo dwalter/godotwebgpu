@@ -147,6 +147,19 @@ public:
 	virtual Size2i get_velocity_target_size();
 	virtual Rect2i get_render_region();
 	virtual void pre_render() {}
+	/* Return true when the interface needs one render pass PER VIEW instead of a
+	   single multiview pass — e.g. WebGPU, which has no multiview extension. The
+	   viewport then draws once per view, and get_color_texture_for_view() supplies
+	   the per-view target. */
+	virtual bool needs_per_view_passes() const { return false; }
+	virtual RID get_color_texture_for_view(uint32_t p_view) { return RID(); }
+	virtual RID get_depth_texture_for_view(uint32_t p_view) { return RID(); }
+	/* Which view the engine is currently rendering, when drawing per-view passes.
+	   The interface reports this view's transform/projection through the existing
+	   get_transform_for_view(0)/get_projection_for_view(0) calls. */
+	virtual void set_current_view(uint32_t p_view) {}
+	virtual uint32_t get_per_view_pass_count() const { return 1; }
+
 	virtual bool pre_draw_viewport(RID p_render_target) { return true; } /* inform XR interface we are about to start our viewport draw process */
 	virtual Vector<BlitToScreen> post_draw_viewport(RID p_render_target, const Rect2 &p_screen_rect) = 0; /* inform XR interface we finished our viewport draw process */
 	virtual void end_frame() {}

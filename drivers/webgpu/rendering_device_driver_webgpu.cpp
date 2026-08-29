@@ -63,7 +63,12 @@
 static void _timestamp_readback_callback(WGPUMapAsyncStatus p_status, WGPUStringView p_message, void *p_userdata1, void *p_userdata2);
 
 // Fence work-done callback: fires when wgpuQueueSubmit work completes on GPU.
-static void _fence_work_done_callback(WGPUQueueWorkDoneStatus p_status, void *p_userdata1, void *p_userdata2) {
+// Newer emdawnwebgpu packages add a WGPUStringView message parameter to
+// WGPUQueueWorkDoneCallback (4 params); earlier ones have 3. Macro presence
+// does NOT discriminate the two (both define WGPU_STRLEN), so provide both
+// signatures as overloads and let the assignment to the port's own
+// WGPUQueueWorkDoneCallback typedef select the matching one.
+static void _fence_work_done_body(void *p_userdata1) {
 	WGFence *fence = (WGFence *)p_userdata1;
 	if (!fence) {
 		return;
@@ -78,6 +83,14 @@ static void _fence_work_done_callback(WGPUQueueWorkDoneStatus p_status, void *p_
 	}
 
 	fence->signaled = true;
+}
+
+[[maybe_unused]] static void _fence_work_done_callback(WGPUQueueWorkDoneStatus p_status, void *p_userdata1, void *p_userdata2) {
+	_fence_work_done_body(p_userdata1);
+}
+
+[[maybe_unused]] static void _fence_work_done_callback(WGPUQueueWorkDoneStatus p_status, WGPUStringView p_message, void *p_userdata1, void *p_userdata2) {
+	_fence_work_done_body(p_userdata1);
 }
 
 // Parse "@group(G[u]) @binding(B[u])" from a WGSL string.
@@ -1694,8 +1707,49 @@ RDD::TextureID RenderingDeviceDriverWebGPU::texture_create(const TextureFormat &
 }
 
 RDD::TextureID RenderingDeviceDriverWebGPU::texture_create_from_extension(uint64_t p_native_texture, TextureType p_type, DataFormat p_format, uint32_t p_array_layers, bool p_depth_stencil, uint32_t p_mipmaps) {
-	// Not supported on web platform.
-	ERR_FAIL_V_MSG(TextureID(), "WebGPU: texture_create_from_extension not supported.");
+	// Wrap an externally-owned WGPUTexture (e.g. a WebXR projection-layer
+	// texture imported from JS via WebGPU.importJsTexture). We take our own
+	// reference so texture_free's unconditional release stays symmetric; the
+	// compositor keeps its own reference to the underlying resource.
+	WGPUTexture ext = (WGPUTexture)(uintptr_t)p_native_texture;
+	ERR_FAIL_NULL_V_MSG(ext, TextureID(), "WebGPU: null external texture handle.");
+	wgpuTextureAddRef(ext);
+
+	WGTexture *tex = new WGTexture();
+	tex->handle = ext;
+	tex->view_source = ext;
+	// Trust the actual texture over the caller's declared format: XR layers
+	// are allocated with the binding's preferred format (often BGRA8), which
+	// the caller cannot know.
+	tex->format = wgpuTextureGetFormat(ext);
+	tex->rd_format = p_format;
+	tex->width = wgpuTextureGetWidth(ext);
+	tex->height = wgpuTextureGetHeight(ext);
+	tex->depth = 1;
+	tex->mipmaps = MAX(1u, p_mipmaps);
+	tex->layers = MAX(1u, p_array_layers);
+	tex->sample_count = 1;
+	tex->dimension = WGPUTextureDimension_2D;
+	tex->view_dimension = (tex->layers > 1) ? WGPUTextureViewDimension_2DArray : WGPUTextureViewDimension_2D;
+	tex->usage = wgpuTextureGetUsage(ext);
+
+	WGPUTextureViewDescriptor view_desc = {};
+	view_desc.format = tex->format;
+	view_desc.dimension = tex->view_dimension;
+	view_desc.baseMipLevel = 0;
+	view_desc.mipLevelCount = tex->mipmaps;
+	view_desc.baseArrayLayer = 0;
+	view_desc.arrayLayerCount = tex->layers;
+	view_desc.aspect = p_depth_stencil ? WGPUTextureAspect_DepthOnly : WGPUTextureAspect_All;
+
+	tex->default_view = wgpuTextureCreateView(ext, &view_desc);
+	if (tex->default_view == nullptr) {
+		wgpuTextureRelease(ext);
+		delete tex;
+		ERR_FAIL_V_MSG(TextureID(), "WebGPU: failed to create view on external texture.");
+	}
+
+	return TextureID(tex);
 }
 
 // Returns true if the format is an sRGB variant.
@@ -2450,6 +2504,8 @@ RDD::DataFormat RenderingDeviceDriverWebGPU::_wgpu_to_data_format(WGPUTextureFor
 	switch (p_format) {
 		case WGPUTextureFormat_BGRA8Unorm: return DATA_FORMAT_B8G8R8A8_UNORM;
 		case WGPUTextureFormat_RGBA8Unorm: return DATA_FORMAT_R8G8B8A8_UNORM;
+		case WGPUTextureFormat_BGRA8UnormSrgb: return DATA_FORMAT_B8G8R8A8_SRGB;
+		case WGPUTextureFormat_RGBA8UnormSrgb: return DATA_FORMAT_R8G8B8A8_SRGB;
 		default: return DATA_FORMAT_MAX;
 	}
 }
@@ -2800,6 +2856,10 @@ Error RenderingDeviceDriverWebGPU::command_queue_execute_and_present(CommandQueu
 			fence->work_done_pending = true;
 			WGPUQueueWorkDoneCallbackInfo cb = {};
 			cb.mode = WGPUCallbackMode_AllowSpontaneous;
+			// Overload set (see definitions near the top of this file): the
+			// port's WGPUQueueWorkDoneCallback typedef selects the matching
+			// signature. A "no matching conversion" error here means a new
+			// emdawnwebgpu changed the callback shape again.
 			cb.callback = _fence_work_done_callback;
 			cb.userdata1 = fence;
 			cb.userdata2 = nullptr;
@@ -8068,13 +8128,19 @@ RDD::PipelineID RenderingDeviceDriverWebGPU::render_pipeline_create(
 			// Chrome ignores CompositeAlphaMode_Opaque and composites alpha=0
 			// against a gray/white background. The swap chain (BGRA8Unorm) is the
 			// only BGRA render target — internal targets use RGBA formats.
+			// TODO(webxr): no longer strictly true — WebXR projection layers are
+			// BGRA8Unorm where getPreferredColorFormat() says so (desktop Chrome),
+			// so XR pipelines also lose alpha writes. Benign for opaque VR
+			// compositing; must be re-keyed on an is-swapchain flag before
+			// supporting immersive-ar alpha-blend output.
 			// Stripping alpha for blended pipelines too ensures the clear value's
 			// alpha=1 is never overwritten by shader output.
 			if (fmt == WGPUTextureFormat_BGRA8Unorm) {
 				mask &= ~WGPUColorWriteMask_Alpha;
 				static int _alpha_strip_log = 0;
 				if (_alpha_strip_log < 10) {
-					[[maybe_unused]] const char *sname = (p_shader.id) ? ((WGShader *)(p_shader.id))->name.utf8().get_data() : "?";
+					[[maybe_unused]] CharString sname_cs = (p_shader.id) ? ((WGShader *)(p_shader.id))->name.utf8() : CharString("?");
+					[[maybe_unused]] const char *sname = sname_cs.get_data();
 					WEBGPU_DIAG({ console.log('[ALPHA-STRIP] Pipeline #' + $0 + ' fmt=BGRA8Unorm mask=' + $1 + ' blend=' + $2 + ' shader=' + UTF8ToString($3)); },
 							_alpha_strip_log, (int)mask, ba.enable_blend ? 1 : 0, sname);
 					_alpha_strip_log++;
@@ -8089,7 +8155,8 @@ RDD::PipelineID RenderingDeviceDriverWebGPU::render_pipeline_create(
 				if (!float32_blendable_supported && _is_float32_format(fmt)) {
 					static int _f32_blend_skip_log = 0;
 					if (_f32_blend_skip_log < 10) {
-						[[maybe_unused]] const char *sname = (p_shader.id) ? ((WGShader *)(p_shader.id))->name.utf8().get_data() : "?";
+						[[maybe_unused]] CharString sname_cs2 = (p_shader.id) ? ((WGShader *)(p_shader.id))->name.utf8() : CharString("?");
+						[[maybe_unused]] const char *sname = sname_cs2.get_data();
 						WEBGPU_DIAG({ console.log('[FLOAT32-BLEND-SKIP] Pipeline fmt=' + $0 + ' shader=' + UTF8ToString($1) + ' — device lacks float32-blendable, disabling blend'); },
 								(int)fmt, sname);
 						_f32_blend_skip_log++;
