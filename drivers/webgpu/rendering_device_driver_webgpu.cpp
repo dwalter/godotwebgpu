@@ -63,7 +63,12 @@
 static void _timestamp_readback_callback(WGPUMapAsyncStatus p_status, WGPUStringView p_message, void *p_userdata1, void *p_userdata2);
 
 // Fence work-done callback: fires when wgpuQueueSubmit work completes on GPU.
-static void _fence_work_done_callback(WGPUQueueWorkDoneStatus p_status, void *p_userdata1, void *p_userdata2) {
+// Newer emdawnwebgpu packages add a WGPUStringView message parameter to
+// WGPUQueueWorkDoneCallback (4 params); earlier ones have 3. Macro presence
+// does NOT discriminate the two (both define WGPU_STRLEN), so provide both
+// signatures as overloads and let the assignment to the port's own
+// WGPUQueueWorkDoneCallback typedef select the matching one.
+static void _fence_work_done_body(void *p_userdata1) {
 	WGFence *fence = (WGFence *)p_userdata1;
 	if (!fence) {
 		return;
@@ -78,6 +83,14 @@ static void _fence_work_done_callback(WGPUQueueWorkDoneStatus p_status, void *p_
 	}
 
 	fence->signaled = true;
+}
+
+[[maybe_unused]] static void _fence_work_done_callback(WGPUQueueWorkDoneStatus p_status, void *p_userdata1, void *p_userdata2) {
+	_fence_work_done_body(p_userdata1);
+}
+
+[[maybe_unused]] static void _fence_work_done_callback(WGPUQueueWorkDoneStatus p_status, WGPUStringView p_message, void *p_userdata1, void *p_userdata2) {
+	_fence_work_done_body(p_userdata1);
 }
 
 // Parse "@group(G[u]) @binding(B[u])" from a WGSL string.
@@ -2800,6 +2813,10 @@ Error RenderingDeviceDriverWebGPU::command_queue_execute_and_present(CommandQueu
 			fence->work_done_pending = true;
 			WGPUQueueWorkDoneCallbackInfo cb = {};
 			cb.mode = WGPUCallbackMode_AllowSpontaneous;
+			// Overload set (see definitions near the top of this file): the
+			// port's WGPUQueueWorkDoneCallback typedef selects the matching
+			// signature. A "no matching conversion" error here means a new
+			// emdawnwebgpu changed the callback shape again.
 			cb.callback = _fence_work_done_callback;
 			cb.userdata1 = fence;
 			cb.userdata2 = nullptr;
