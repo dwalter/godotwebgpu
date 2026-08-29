@@ -66,7 +66,17 @@ body {
 	image-rendering: pixelated;
 }
 
-#status-progress, #status-notice {
+#status-progress, #status-phase {
+	color: #b0b0b0;
+	font-family: 'Noto Sans', 'Droid Sans', Arial, sans-serif;
+	font-size: 0.85em;
+	line-height: 1.4em;
+	margin-top: 0.5em;
+	text-align: center;
+	display: none;
+}
+
+#status-notice {
 	display: none;
 }
 
@@ -74,6 +84,16 @@ body {
 	bottom: 10%;
 	width: 50%;
 	margin: 0 auto;
+}
+
+#status-phase {
+	/* Positioned like the bar itself: the absolutely-positioned splash paints
+	   above normal-flow content, so an unpositioned phase line renders
+	   underneath it (measured: elementFromPoint at the text hit the splash). */
+	position: absolute;
+	left: 0;
+	right: 0;
+	bottom: calc(10% - 2.2em);
 }
 
 #status-notice {
@@ -104,6 +124,7 @@ body {
 		<div id="status">
 			<img id="status-splash" class="$GODOT_SPLASH_CLASSES" src="$GODOT_SPLASH" alt="">
 			<progress id="status-progress"></progress>
+			<div id="status-phase"></div>
 			<div id="status-notice"></div>
 		</div>
 
@@ -218,7 +239,19 @@ const engine = new Engine(GODOT_CONFIG);
 					statusProgress.removeAttribute('max');
 				}
 			},
+			// Reported after the download finishes, just before the engine's
+			// synchronous start-up blocks the main thread. Swap the full
+			// progress bar for a legible phase message so the loading screen
+			// does not look frozen while the engine initializes.
+			'onStatusChange': function (phase) {
+				// A quiet line under the (full) progress bar — enough to say the
+				// silence is expected, without an alarming notice box.
+				const el = document.getElementById('status-phase');
+				el.textContent = phase === 'shader-compile' ? 'Compiling shaders…' : 'Initializing engine…';
+				el.style.display = 'block';
+			},
 		}).then(() => {
+			document.getElementById('status-phase').style.display = 'none';
 			setStatusMode('hidden');
 		}, displayFailureNotice);
 	}

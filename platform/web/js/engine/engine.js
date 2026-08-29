@@ -172,10 +172,57 @@ const Engine = (function () {
 							me.rtenv['copyToFS'](file.path, file.buffer);
 						}
 						preloader.preloadedFiles.length = 0; // Clear memory
-						me.rtenv['callMain'](me.config.args);
-						initPromise = null;
-						me.installServiceWorker();
-						resolve();
+						// Once the download completes the progress bar sits at 100%
+						// while `callMain` runs the engine's synchronous start-up
+						// (module/physics init and, on WebGPU, shader/pipeline
+						// compilation). That work blocks the main thread with no
+						// progress reporting, so the page can look frozen. Surface
+						// a boot-phase message and force it to paint *before* the
+						// blocking call, so the last thing drawn is legible text
+						// instead of a stalled bar.
+						function runMain() {
+							me.rtenv['callMain'](me.config.args);
+							initPromise = null;
+							me.installServiceWorker();
+							resolve();
+						}
+						if (typeof me.config.onStatusChange === 'function') {
+							// Machine-readable phase token; the shell owns the (localized)
+							// display text. 'shader-compile' only when a WebGPU device was
+							// actually pre-initialized — with renderingDriver=webgpu but no
+							// device, the engine falls back to GL and 'engine-init' is the
+							// honest phase.
+							const phase = (me.config.renderingDriver === 'webgpu' && me.config.preinitializedWebGPUDevice)
+								? 'shader-compile'
+								: 'engine-init';
+							me.config.onStatusChange(phase);
+							// Yield to the browser so the message actually paints before
+							// `callMain` blocks the thread. A double rAF is NOT a
+							// composite guarantee: measured under post-download load
+							// (CDP screencast), the two rAF callbacks fired 2-8ms apart
+							// with no frame between them, and the message never reached
+							// a single compositor frame. Instead, align to a frame
+							// boundary with one rAF, then give the compositor real time
+							// to present the committed change before blocking. rAF is
+							// suspended entirely in background tabs, so keep an absolute
+							// fallback timer (run-once latch) or a backgrounded page
+							// would not boot until focused.
+							let mainStarted = false;
+							const runMainOnce = function () {
+								if (!mainStarted) {
+									mainStarted = true;
+									runMain();
+								}
+							};
+							if (typeof requestAnimationFrame === 'function') {
+								requestAnimationFrame(function () {
+									setTimeout(runMainOnce, 100);
+								});
+							}
+							setTimeout(runMainOnce, 1000);
+						} else {
+							runMain();
+						}
 					});
 				});
 			},

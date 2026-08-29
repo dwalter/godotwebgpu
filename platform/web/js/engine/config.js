@@ -216,6 +216,23 @@ const InternalConfig = function (initConfig) { // eslint-disable-line no-unused-
 		 */
 		onProgress: null,
 		/**
+		 * A callback function for reporting the engine boot phase after the
+		 * download completes. Called with a machine-readable boot-phase token
+		 * (``'shader-compile'`` when a pre-initialized WebGPU device will run
+		 * shader/pipeline compilation, ``'engine-init'`` otherwise) immediately
+		 * before the synchronous engine start-up runs, so the shell can show a
+		 * localized message and keep the loading screen legible while the main
+		 * thread is blocked.
+		 *
+		 * @callback EngineConfig.onStatusChange
+		 * @param {string} phase The boot-phase token.
+		 */
+		/**
+		 * @ignore
+		 * @type {?function(string)}
+		 */
+		onStatusChange: null,
+		/**
 		 * A callback function for handling the standard output stream. This method should usually only be used in debug pages.
 		 *
 		 * By default, ``console.log()`` is used.
@@ -278,6 +295,7 @@ const InternalConfig = function (initConfig) { // eslint-disable-line no-unused-
 		this.onPrintError = parse('onPrintError', this.onPrintError);
 		this.onPrint = parse('onPrint', this.onPrint);
 		this.onProgress = parse('onProgress', this.onProgress);
+		this.onStatusChange = parse('onStatusChange', this.onStatusChange);
 
 		// Godot config
 		this.canvas = parse('canvas', this.canvas);
