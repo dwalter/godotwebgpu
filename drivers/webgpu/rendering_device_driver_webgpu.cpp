@@ -7110,40 +7110,10 @@ void RenderingDeviceDriverWebGPU::command_bind_render_uniform_sets(CommandBuffer
 
 	WGShader *pipeline_shader = cmd->render_state.current_pipeline ? cmd->render_state.current_pipeline->shader : nullptr;
 
-	// Diagnostic: log texture bindings and push constant info on swap chain pass.
 	// Invalidate bind group tracking if the pipeline shader changed.
 	if (pipeline_shader != cmd->bound_shader) {
 		cmd->invalidate_bind_groups();
 		cmd->bound_shader = pipeline_shader;
-	}
-
-	// Diagnostic: detect the sync-scope conflict that's causing the
-	// "includes writable usage and another usage in the same synchronization
-	// scope" validation error. This fires whenever a bound texture's parent
-	// matches a framebuffer attachment's parent. Limited to a few prints so
-	// we don't spam the console after a match.
-	static int _sync_conflict_log_count = 0;
-	WGFramebuffer *_cur_fb = cmd->render_state.framebuffer;
-	if (_cur_fb && _sync_conflict_log_count < 20) {
-		for (uint32_t i = 0; i < p_set_count; i++) {
-			WGUniformSet *us = (WGUniformSet *)(p_uniform_sets[i].id);
-			if (!us) continue;
-			for (const KeyValue<uint32_t, WGTexture *> &kv : us->bound_textures) {
-				WGTexture *btex = kv.value;
-				if (!btex || !btex->view_source) continue;
-				for (uint32_t a = 0; a < _cur_fb->attachments.size(); a++) {
-					WGTexture *atex = _cur_fb->attachments[a];
-					if (!atex) continue;
-					WGPUTexture a_src = atex->gpu_handle();
-					if (a_src == btex->view_source) {
-						_sync_conflict_log_count++;
-						if (_sync_conflict_log_count >= 20) break;
-					}
-				}
-				if (_sync_conflict_log_count >= 20) break;
-			}
-			if (_sync_conflict_log_count >= 20) break;
-		}
 	}
 
 	// Task 7.5: Unpack 4-bit frame indices from p_dynamic_offsets as we walk the sets.
