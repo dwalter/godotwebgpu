@@ -301,9 +301,13 @@ const Engine = (function () {
 				+ 'Try using a recent version of Chrome, Edge, or Firefox.'
 			));
 		}
-		return navigator.gpu.requestAdapter(adapterOptions || {
-			powerPreference: 'high-performance',
-		}).then(function (adapter) {
+		return navigator.gpu.requestAdapter(Object.assign({
+				powerPreference: 'high-performance',
+				// Required for XRGPUBinding: the adapter must be XR-compatible
+				// BEFORE the device is created (WebXR-WebGPU binding spec).
+				// Default on; an explicit caller option still wins.
+				xrCompatible: true,
+			}, adapterOptions || {})).then(function (adapter) {
 			if (!adapter) {
 				return Promise.reject(new Error(
 					'WebGPU adapter not found. Your GPU may not support WebGPU.'

@@ -3159,6 +3159,12 @@ void RendererSceneCull::_render_scene(const RendererSceneRender::CameraData *p_c
 	Vector<RID> directional_lights;
 	// directional lights
 	{
+		// Guard the repeat-view-pass skip to actual camera passes: the flag's
+		// invariant is "set only while the per-view loop re-renders the SAME
+		// camera", and a reflection probe rendering while it is set (none does
+		// today) must never inherit the skip — its atlas state is its own.
+		bool repeat_view_pass = xr_repeat_view_pass && !p_reflection_probe.is_valid();
+
 		cull.shadow_count = 0;
 
 		Vector<Instance *> lights_with_shadow;
@@ -3177,7 +3183,12 @@ void RendererSceneCull::_render_scene(const RendererSceneRender::CameraData *p_c
 			//check shadow..
 
 			if (light) {
-				if (p_using_shadows && p_shadow_atlas.is_valid() && RSG::light_storage->light_has_shadow(E->base) && !(RSG::light_storage->light_get_type(E->base) == RS::LIGHT_DIRECTIONAL && RSG::light_storage->light_directional_get_sky_mode(E->base) == RS::LIGHT_DIRECTIONAL_SKY_MODE_SKY_ONLY)) {
+				// On XR repeat view passes the cascades set up by the first
+				// pass are reused verbatim (shadow maps are view-independent);
+				// skipping the collection here keeps cull.shadow_count at 0 so
+				// the cascade cull and re-render below no-op, while the atlas
+				// and per-light cascade transforms persist from the first pass.
+				if (!repeat_view_pass && p_using_shadows && p_shadow_atlas.is_valid() && RSG::light_storage->light_has_shadow(E->base) && !(RSG::light_storage->light_get_type(E->base) == RS::LIGHT_DIRECTIONAL && RSG::light_storage->light_directional_get_sky_mode(E->base) == RS::LIGHT_DIRECTIONAL_SKY_MODE_SKY_ONLY)) {
 					lights_with_shadow.push_back(E);
 				}
 				//add to list
@@ -3185,7 +3196,9 @@ void RendererSceneCull::_render_scene(const RendererSceneRender::CameraData *p_c
 			}
 		}
 
-		RSG::light_storage->set_directional_shadow_count(lights_with_shadow.size());
+		if (!repeat_view_pass) {
+			RSG::light_storage->set_directional_shadow_count(lights_with_shadow.size());
+		}
 
 		for (int i = 0; i < lights_with_shadow.size(); i++) {
 			_light_instance_setup_directional_shadow(i, lights_with_shadow[i], p_camera_data->main_transform, p_camera_data->main_projection, p_camera_data->is_orthogonal, p_camera_data->vaspect);

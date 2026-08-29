@@ -63,6 +63,13 @@ private:
 
 	Size2 render_targetsize;
 	RBMap<unsigned int, RID> texture_cache;
+	RID view_slice_cache[2];
+	uint32_t current_view = 0;
+	// WGPUTexture pointers imported from JS this session (owning references,
+	// released at uninitialize). Distinct handles are few (the layer's
+	// swapchain images), but the per-frame texture_cache only ever holds the
+	// LAST frame's, so session-lifetime tracking is required to release all.
+	LocalVector<uint64_t> imported_texture_handles;
 	struct Touch {
 		bool is_touching = false;
 		Vector2 position;
@@ -84,6 +91,7 @@ private:
 	RID color_texture;
 	RID depth_texture;
 
+	void _release_view_slices();
 	RID _get_color_texture();
 	RID _get_depth_texture();
 	RID _get_texture(unsigned int p_texture_id);
@@ -133,6 +141,12 @@ public:
 	virtual Projection get_projection_for_view(uint32_t p_view, double p_aspect, double p_z_near, double p_z_far) override;
 	virtual bool pre_draw_viewport(RID p_render_target) override;
 	virtual Vector<BlitToScreen> post_draw_viewport(RID p_render_target, const Rect2 &p_screen_rect) override;
+	virtual bool needs_per_view_passes() const override;
+	virtual uint32_t get_per_view_pass_count() const override;
+	virtual RID get_color_texture_for_view(uint32_t p_view) override;
+	virtual RID get_depth_texture_for_view(uint32_t p_view) override;
+	virtual void set_current_view(uint32_t p_view) override;
+
 	virtual RID get_color_texture() override;
 	virtual RID get_depth_texture() override;
 	virtual RID get_velocity_texture() override;
