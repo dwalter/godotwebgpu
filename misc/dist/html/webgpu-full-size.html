@@ -167,7 +167,12 @@ async function initWebGPU() {
 		maxDynamicStorageBuffersPerPipelineLayout: 4,
 		maxSampledTexturesPerShaderStage: 16,
 		maxSamplersPerShaderStage: 16,
-		maxStorageBuffersPerShaderStage: 8,
+		// The Mobile renderer's scene shader binds 10 storage buffers in the
+		// vertex stage; the WebGPU default limit is 8, so a hardcoded 8 here
+		// self-clamps below what the renderer needs even on adapters that
+		// offer more. Request the adapter's own maximum instead (same policy
+		// as the engine.js device path).
+		maxStorageBuffersPerShaderStage: adapter.limits.maxStorageBuffersPerShaderStage || 8,
 		maxStorageTexturesPerShaderStage: 4,
 		maxUniformBuffersPerShaderStage: 12,
 		maxUniformBufferBindingSize: 65536,
